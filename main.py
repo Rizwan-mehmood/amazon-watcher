@@ -268,5 +268,5 @@ if __name__ == "__main__":
             check_once()
         except Exception as e:
             log(f"Error in check loop: {e}")
-        log("Sleeping for 60 seconds…")
-        time.sleep(60)
+        log("Sleeping for 300 seconds…")
+        time.sleep(300)
