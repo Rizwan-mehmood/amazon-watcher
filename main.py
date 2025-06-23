@@ -254,8 +254,10 @@ def check_once():
                 log(f"Error checking {url}: {e}")
 
     finally:
+        global _driver
         if _driver:
             _driver.quit()
+            _driver = None
 
 
 if __name__ == "__main__":
