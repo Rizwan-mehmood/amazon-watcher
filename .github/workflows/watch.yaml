@@ -2,7 +2,7 @@ name: Amazon Watcher
 
 on:
   schedule:
-    - cron:  '*/5 * * * *'
+    - cron:  '0 */3 * * *'
   workflow_dispatch:
 
 jobs:
@@ -37,7 +37,7 @@ jobs:
       - name: Run Amazon Watcher
         env:
           FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
-          CHECK_INTERVAL: 10
+          CHECK_INTERVAL: 300
           LOG: true
           CHROMEDRIVER_PATH: /usr/local/bin/chromedriver
           # Point Selenium to use the system Chromium binary
