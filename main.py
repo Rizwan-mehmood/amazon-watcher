@@ -131,8 +131,8 @@ def set_italy_delivery_once(drv, wait):
         drv.refresh()
         time.sleep(4)
         log("→ Delivery set to Italy 00049")
-    except Exception:
-        log("→ Could not set Italy delivery (already set?)")
+    except Exception as e:
+        log(f"❌ Failed to set Italy delivery: {type(e).__name__} - {e}")
 
 
 
