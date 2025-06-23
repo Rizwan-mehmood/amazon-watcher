@@ -159,7 +159,7 @@ def check_once():
         raise RuntimeError("Missing token/chat_id in Firestore config")
 
     drv = init_driver()
-    wait = WebDriverWait(drv, 10000)
+    wait = WebDriverWait(drv, 20)
 
     drv.get("https://www.amazon.it/-/en/ref=nav_logo")
 
