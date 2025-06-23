@@ -149,6 +149,8 @@ def check_once():
 
     drv.get("https://www.amazon.it/-/en/ref=nav_logo")
 
+    time.sleep(20)
+
     set_italy_delivery_once(drv, wait)
     
     try:
