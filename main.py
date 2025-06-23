@@ -113,9 +113,16 @@ def send_telegram(token: str, chat_id: str, text: str):
 
 def set_italy_delivery_once(drv, wait):
     try:
+        page_html = drv.page_source
+        log("🔍 Page HTML snapshot (first 5000 characters):")
+        log(page_html[:5000])
+    except Exception as e:
+        log(f"⚠️ Could not save page HTML: {type(e).__name__} - {e}")
+        
+    try:
         log("→ Setting delivery to Italy (00049)…")
         wait.until(
-            EC.element_to_be_clickable((By.ID, "nav-global-location-popover-link"))
+            EC.element_to_be_clickable((By.ID, "nav-global-location-slot"))
         ).click()
         log("→ Clicked the container")
         zip_in = wait.until(
