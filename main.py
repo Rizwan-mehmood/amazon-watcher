@@ -150,7 +150,7 @@ def set_italy_delivery_once(drv, wait):
 
 
 
-# ─── Core check loop ────────────────────────────────────
+# ─── Core Logic ─────────────────────────────────────────
 def check_once():
     cfg = load_config()
     token = cfg.get("token")
@@ -159,14 +159,11 @@ def check_once():
         raise RuntimeError("Missing token/chat_id in Firestore config")
 
     drv = init_driver()
-    wait = WebDriverWait(drv, 20)
+    wait = WebDriverWait(drv, 10)
 
     drv.get("https://www.amazon.it/-/en/ref=nav_logo")
-
-    time.sleep(20)
-
     set_italy_delivery_once(drv, wait)
-    
+
     try:
         for doc_id, item in load_links():
             if item.get("available"):
@@ -178,94 +175,261 @@ def check_once():
                 drv.get(url)
                 time.sleep(8)
 
-                # ─── Check out-of-stock ───────────────────────────
+                # ─── Out of stock? ────────────────────────────────
                 try:
                     wait.until(EC.presence_of_element_located((By.ID, "outOfStock")))
-                    log("→ Still out of stock")
+                    log("→ Still out of stock, skipping")
                     continue
                 except:
-                    pass
+                    log("→ Not marked out of stock")
 
                 # ─── Dismiss cookies ───────────────────────────────
                 try:
                     cookie = wait.until(
-                        EC.presence_of_element_located((By.ID, "sp-cc-rejectall-link"))
+                        EC.element_to_be_clickable((By.ID, "sp-cc-rejectall-link"))
                     )
                     cookie.click()
                     log("→ Cookies dismissed")
                 except:
-                    pass
+                    log("→ No cookie banner to dismiss")
 
-                # ─── Open all buying choices ───────────────────────
-                aoc = wait.until(
-                    EC.presence_of_element_located(
-                        (By.ID, "buybox-see-all-buying-choices")
+                # ─── Core PDP offer ────────────────────────────────
+                try:
+                    if _check_core_offer(drv, wait, item):
+                        save_link_state(doc_id, {"available": True})
+                        msg = (
+                            f"✅ AMAZON CORE OFFER FOUND!\n{url}\n"
+                            f"💰 €{_CORE_PRICE:.2f} (≤ €{item['target_price']:.2f})\n"
+                            f"🚚 Ships from: {_CORE_SHIPS}\n"
+                            f"🏷️ Sold by: {_CORE_SOLD}"
+                        )
+                        send_telegram(token, chat_id, msg)
+                        log("→ Notifying core-offer match")
+                        continue
+                    else:
+                        log("→ Core PDP offer did not meet criteria")
+                except Exception as e:
+                    log(f"→ Core PDP check failed: {e}")
+
+                # ─── Open all buying choices ────────────────────────
+                try:
+                    # try primary button
+                    aoc = wait.until(
+                        EC.element_to_be_clickable(
+                            (By.ID, "buybox-see-all-buying-choices")
+                        )
                     )
-                )
-                drv.execute_script("arguments[0].scrollIntoView(true);", aoc)
-                aoc.click()
-                time.sleep(6)
-                log("→ Offers list opened")
-
-                # ─── Iterate offers ───────────────────────────────
-                container = wait.until(
-                    EC.presence_of_element_located((By.ID, "aod-offer-list"))
-                )
-                wrapper = container.find_element(By.XPATH, "./div")
-                offers = wrapper.find_elements(By.XPATH, "./div[@id='aod-offer']")
-
-                found = False
-                for offer in offers:
+                    log("→ Found buybox-see-all-buying-choices")
+                except TimeoutException:
                     try:
-                        whole = offer.find_element(
-                            By.CSS_SELECTOR, ".a-price-whole"
-                        ).text.replace(".", "")
-                        frac = offer.find_element(
-                            By.CSS_SELECTOR, ".a-price-fraction"
-                        ).text
-                        price = float(f"{whole}.{frac}")
-                    except:
+                        aoc = wait.until(
+                            EC.element_to_be_clickable((By.ID, "aod-ingress-link"))
+                        )
+                        log("→ Found aod-ingress-link fallback")
+                    except Exception:
+                        log(
+                            "→ No 'see all buying choices' link found, skipping full-list checks"
+                        )
                         continue
 
-                    # Ships from / Sold by
+                try:
+                    drv.execute_script("arguments[0].scrollIntoView(true);", aoc)
+                    aoc.click()
+                    time.sleep(6)
+                    log("→ Offers list opened")
+                except Exception as e:
+                    log(f"→ Failed to open offers list: {e}")
+                    continue
+
+                # ─── Check pinned offer ─────────────────────────────
+                try:
+                    pinned = wait.until(
+                        EC.presence_of_element_located((By.ID, "aod-pinned-offer"))
+                    )
+                    log("→ Found pinned-offer container")
+
+                    # 1) Price
                     try:
-                        sf = offer.find_element(
-                            By.XPATH,
-                            ".//div[@id='aod-offer-shipsFrom']//span[contains(@class,'a-color-base')]",
+                        price_span = pinned.find_element(By.ID, "aod-price-0")
+                        # try offscreen
+                        raw = price_span.find_element(
+                            By.CSS_SELECTOR, "span.aok-offscreen"
                         ).text.strip()
-                    except:
+                        if not raw:
+                            # fallback to whole + fraction
+                            whole = price_span.find_element(
+                                By.CSS_SELECTOR, "span.a-price-whole"
+                            ).text
+                            frac = price_span.find_element(
+                                By.CSS_SELECTOR, "span.a-price-fraction"
+                            ).text
+                            raw = f"{whole}.{frac}"
+                            log(
+                                f"→ Pinned-offer: offscreen empty, fallback raw='{raw}'"
+                            )
+                        else:
+                            log(f"→ Pinned-offer: offscreen raw='{raw}'")
+                        pinned_price = float(raw.replace("€", "").replace(",", ""))
+                        log(f"→ Parsed pinned price: €{pinned_price:.2f}")
+                    except Exception as e:
+                        log(f"→ Pinned-offer: price missing or parse failed: {e}")
+                        raise  # stop pinned-check if we can’t get a price
+
+                    # 2) Ships from
+                    try:
+                        # look under the right-hand grid for the “aod-offer-shipsFrom” entry
+                        ships = pinned.find_elements(
+                            By.CSS_SELECTOR,
+                            "#aod-offer-shipsFrom .a-fixed-left-grid-col.a-col-right span.a-size-small.a-color-base",
+                        )
+                        if ships:
+                            sf = ships[0].text.strip()
+                            log(f"→ Parsed pinned ships-from: {sf}")
+                        else:
+                            sf = ""
+                            log("→ Pinned-offer: no ships-from element found")
+                    except Exception as e:
                         sf = ""
+                        log(f"→ Pinned-offer: ships-from lookup failed: {e}")
+
+                    # 3) Sold by
                     try:
-                        sb = offer.find_element(
-                            By.XPATH,
-                            ".//div[@id='aod-offer-soldBy']//a[contains(@class,'a-link-normal')]",
-                        ).text.strip()
-                    except:
+                        sellers = pinned.find_elements(
+                            By.CSS_SELECTOR,
+                            "#aod-offer-soldBy .a-fixed-left-grid-col.a-col-right a.a-size-small.a-link-normal",
+                        )
+                        if sellers:
+                            sb = sellers[0].text.strip()
+                            log(f"→ Parsed pinned sold-by: {sb}")
+                        else:
+                            sb = ""
+                            log("→ Pinned-offer: no sold-by element found")
+                    except Exception as e:
                         sb = ""
+                        log(f"→ Pinned-offer: sold-by lookup failed: {e}")
 
-                    log(f"  → Offer €{price:.2f}, Ships from “{sf}”, Sold by “{sb}”")
+                    # 4) Apply filters
+                    if (
+                        pinned_price <= item["target_price"]
+                        and (not item.get("check_shipped") or "amazon" in sf.lower())
+                        and (not item.get("check_sold") or "amazon" in sb.lower())
+                    ):
+                        msg = (
+                            f"✅ AMAZON PINNED OFFER FOUND!\n{url}\n"
+                            f"💰 €{pinned_price:.2f} (≤ €{item['target_price']:.2f})\n"
+                            f"🚚 Ships from: {sf}\n"
+                            f"🏷️ Sold by: {sb}"
+                        )
+                        save_link_state(doc_id, {"available": True})
+                        send_telegram(token, chat_id, msg)
+                        log("→ Notifying pinned-offer match")
+                        continue
+                    else:
+                        log("→ Pinned offer did not meet criteria")
 
-                    if price > item["target_price"]:
-                        continue
-                    if item.get("check_shipped") and "amazon" not in sf.lower():
-                        continue
-                    if item.get("check_sold") and "amazon" not in sb.lower():
-                        continue
+                except Exception as e:
+                    log(f"→ Skipping pinned-offer: {e}")
 
-                    # ─── Found one! ────────────────────────────────
-                    msg = (
-                        f"✅ AMAZON OFFER FOUND!\n{url}\n"
-                        f"💰 €{price:.2f} (≤ €{item['target_price']:.2f})\n"
-                        f"🚚 Ships from: {sf}\n"
-                        f"🏷️ Sold by: {sb}"
+                # ─── Scroll to load offers for up to 20 s ─────────────────────
+                try:
+                    scroller = wait.until(
+                        EC.presence_of_element_located(
+                            (By.ID, "all-offers-display-scroller")
+                        )
                     )
-                    save_link_state(doc_id, {"available": True})
-                    send_telegram(token, chat_id, msg)
-                    found = True
-                    break
+                    start = time.time()
 
-                if not found:
-                    log("→ No offer met criteria")
+                    while time.time() - start < 10:
+                        drv.execute_script(
+                            "arguments[0].scrollTo(0, arguments[0].scrollHeight);",
+                            scroller,
+                        )
+                        time.sleep(1)
+
+                    elapsed = time.time() - start
+                    log(f"→ Finished scrolling after {elapsed:.1f}s")
+
+                except Exception as e:
+                    log(f"→ Scrolling container failed or not present: {e}")
+
+                # ─── Iterate full offer list ─────────────────────────
+                try:
+                    container = wait.until(
+                        EC.presence_of_element_located((By.ID, "aod-offer-list"))
+                    )
+                    sections = container.find_elements(By.CSS_SELECTOR, "div.a-section")
+                    log(f"→ Found {len(sections)} offer sections")
+
+                    found = False
+                    for idx, section in enumerate(sections, start=1):
+                        offers = section.find_elements(
+                            By.XPATH, ".//div[@id='aod-offer']"
+                        )
+                        log(f"→ Section {idx}: {len(offers)} offers")
+                        for offer in offers:
+                            # parse price
+                            try:
+                                whole = offer.find_element(
+                                    By.CSS_SELECTOR, ".a-price-whole"
+                                ).text.replace(".", "")
+                                frac = offer.find_element(
+                                    By.CSS_SELECTOR, ".a-price-fraction"
+                                ).text
+                                price = float(f"{whole}.{frac}")
+                            except Exception:
+                                log("   – skipping offer: price not found")
+                                continue
+
+                            # parse ships-from / sold-by
+                            sf = sb = ""
+                            try:
+                                sf = offer.find_element(
+                                    By.XPATH,
+                                    ".//div[@id='aod-offer-shipsFrom']//span[contains(@class,'a-color-base')]",
+                                ).text.strip()
+                            except:
+                                log("   – offer missing ships-from")
+                            try:
+                                sb = offer.find_element(
+                                    By.XPATH,
+                                    ".//div[@id='aod-offer-soldBy']//a[contains(@class,'a-link-normal')]",
+                                ).text.strip()
+                            except:
+                                log("   – offer missing sold-by")
+
+                            log(
+                                f"   → Offer €{price:.2f}, Ships from “{sf}”, Sold by “{sb}”"
+                            )
+
+                            # apply filters
+                            if price > item["target_price"]:
+                                continue
+                            if item.get("check_shipped") and "amazon" not in sf.lower():
+                                continue
+                            if item.get("check_sold") and "amazon" not in sb.lower():
+                                continue
+
+                            # match!
+                            msg = (
+                                f"✅ AMAZON OFFER FOUND!\n{url}\n"
+                                f"💰 €{price:.2f} (≤ €{item['target_price']:.2f})\n"
+                                f"🚚 Ships from: {sf}\n"
+                                f"🏷️ Sold by: {sb}"
+                            )
+                            save_link_state(doc_id, {"available": True})
+                            send_telegram(token, chat_id, msg)
+                            log("→ Notifying list-offer match")
+                            found = True
+                            break
+
+                        if found:
+                            break
+
+                    if not found:
+                        log("→ No offer met criteria in full list")
+
+                except Exception as e:
+                    log(f"→ Offer-list not present or parsing failed: {e}")
 
             except TimeoutException as e:
                 log(f"Timeout on {url}: {e}")
@@ -278,6 +442,62 @@ def check_once():
             _driver.quit()
             _driver = None
 
+
+def _safe_text(ctx, by, selector):
+    try:
+        return ctx.find_element(by, selector).text.strip()
+    except:
+        return ""
+
+
+def _check_core_offer(drv, wait, item):
+    """
+    Returns True if the price / ships-from / sold-by read from the main PDP
+    meet the item’s criteria, setting globals _CORE_PRICE, _CORE_SHIPS, _CORE_SOLD.
+    """
+    global _CORE_PRICE, _CORE_SHIPS, _CORE_SOLD
+    try:
+        # 1) price
+        price_div = wait.until(
+            EC.presence_of_element_located((By.ID, "corePrice_feature_div"))
+        )
+        offscreen = price_div.find_element(
+            By.CSS_SELECTOR, ".a-offscreen"
+        ).get_attribute("innerText")
+        # strip currency symbol, convert
+        _CORE_PRICE = float(offscreen.replace("€", "").replace(",", "").strip())
+
+        # 2) ships-from  / sold-by
+        feat = wait.until(
+            EC.presence_of_element_located((By.ID, "offer-display-features"))
+        )
+        # uses the “feature-text-message” spans
+        _CORE_SHIPS = _safe_text(
+            feat,
+            By.CSS_SELECTOR,
+            "#fulfillerInfoFeature_feature_div .offer-display-feature-text-message",
+        )
+        _CORE_SOLD = _safe_text(
+            feat,
+            By.CSS_SELECTOR,
+            "#merchantInfoFeature_feature_div .offer-display-feature-text-message",
+        )
+
+        log(
+            f"→ Core PDP €{_CORE_PRICE:.2f}, Ships from “{_CORE_SHIPS}”, Sold by “{_CORE_SOLD}”"
+        )
+
+        # 3) apply filters
+        if _CORE_PRICE > item["target_price"]:
+            return False
+        if item.get("check_shipped") and "amazon" not in _CORE_SHIPS.lower():
+            return False
+        if item.get("check_sold") and "amazon" not in _CORE_SOLD.lower():
+            return False
+
+        return True
+    except Exception:
+        return False
 
 if __name__ == "__main__":
     log("⭐️ AmazonWatcher continuous mode starting…")
