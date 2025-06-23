@@ -162,7 +162,12 @@ def check_once():
     wait = WebDriverWait(drv, 10)
 
     drv.get("https://www.amazon.it/-/en/ref=nav_logo")
-    set_italy_delivery_once(drv, wait)
+    links = list(load_links())
+    if links:
+        log(f"→ Found {len(links)} link(s) in Firestore, setting delivery…")
+        set_italy_delivery_once(drv, wait)
+    else:
+        log("→ No links in Firestore, skipping delivery setup")
 
     try:
         for doc_id, item in load_links():
