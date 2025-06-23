@@ -111,6 +111,31 @@ def send_telegram(token: str, chat_id: str, text: str):
         log(f"Telegram error: {e}")
 
 
+def set_italy_delivery_once(drv, wait):
+    try:
+        log("→ Setting delivery to Italy (00049)…")
+        wait.until(
+            EC.element_to_be_clickable((By.ID, "nav-global-location-popover-link"))
+        ).click()
+        zip_in = wait.until(
+            EC.presence_of_element_located((By.ID, "GLUXZipUpdateInput"))
+        )
+        zip_in.clear()
+        zip_in.send_keys("00049", Keys.ENTER)
+        time.sleep(4)
+        pop = wait.until(
+            EC.presence_of_element_located((By.CLASS_NAME, "a-popover-footer"))
+        )
+        pop.find_element(By.XPATH, "./*").click()
+        time.sleep(4)
+        drv.refresh()
+        time.sleep(4)
+        log("→ Delivery set to Italy 00049")
+    except Exception:
+        log("→ Could not set Italy delivery (already set?)")
+
+
+
 # ─── Core check loop ────────────────────────────────────
 def check_once():
     cfg = load_config()
@@ -122,6 +147,8 @@ def check_once():
     drv = init_driver()
     wait = WebDriverWait(drv, 15)
 
+    set_italy_delivery_once(drv, wait)
+    
     try:
         for doc_id, item in load_links():
             if item.get("available"):
@@ -132,32 +159,6 @@ def check_once():
             try:
                 drv.get(url)
                 time.sleep(8)
-
-                # ─── Set delivery to Italy (00049) ───────────────
-                try:
-                    wait.until(
-                        EC.element_to_be_clickable(
-                            (By.ID, "nav-global-location-popover-link")
-                        )
-                    ).click()
-                    zip_in = wait.until(
-                        EC.presence_of_element_located((By.ID, "GLUXZipUpdateInput"))
-                    )
-                    zip_in.clear()
-                    zip_in.send_keys("00049", Keys.ENTER)
-                    time.sleep(4)
-                    pop = wait.until(
-                        EC.presence_of_element_located(
-                            (By.CLASS_NAME, "a-popover-footer")
-                        )
-                    )
-                    pop.find_element(By.XPATH, "./*").click()
-                    time.sleep(4)
-                    drv.refresh()
-                    time.sleep(4)
-                    log("→ Delivery set to Italy 00049")
-                except Exception:
-                    log("→ Could not set Italy delivery (already set?)")
 
                 # ─── Check out-of-stock ───────────────────────────
                 try:
