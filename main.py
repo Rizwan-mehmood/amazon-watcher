@@ -17,6 +17,10 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.common.exceptions import TimeoutException, WebDriverException
+from threading import Thread
+from flask import Flask, jsonify
+
+app = Flask(__name__)
 
 # ─── CONFIG ─────────────────────────────────────────────
 CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", 300))
@@ -266,6 +270,20 @@ def check_loop():
             _driver.quit()
 
 
-if __name__ == "__main__":
+@app.route("/")
+def health():
+    return jsonify(status="ok")
+
+
+def start_bot():
     log("⭐️ AmazonWatcher starting…")
     check_loop()
+
+
+if __name__ == "__main__":
+    t = Thread(target=start_bot, daemon=True)
+    t.start()
+
+    # 2) Launch Flask so Render thinks it’s a web service
+    port = int(os.getenv("PORT", 8080))
+    app.run(host="0.0.0.0", port=port)
