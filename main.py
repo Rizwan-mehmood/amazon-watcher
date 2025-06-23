@@ -147,6 +147,8 @@ def check_once():
     drv = init_driver()
     wait = WebDriverWait(drv, 15)
 
+    drv.get("https://www.amazon.it/-/en/ref=nav_logo")
+
     set_italy_delivery_once(drv, wait)
     
     try:
