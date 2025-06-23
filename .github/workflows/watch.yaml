@@ -17,37 +17,19 @@ jobs:
         with:
           python-version: '3.x'
 
-      - name: Install Chrome for Testing & Chromedriver
+      - name: Install browser runtime & place Chromedriver
         run: |
           sudo apt-get update
-          sudo apt-get install -y curl jq unzip
+          # Install Chromium (headless-capable)
+          sudo apt-get install -y chromium-browser
 
-          # 1) Fetch latest stable version number
-          LATEST=$(curl -s https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions.json \
-            | jq -r '.channels.Stable.version')
-
-          echo "Using Chrome for Testing version: $LATEST"
-
-          # 2) Download & unzip Chrome for Testing
-          wget -q -O chrome-linux64.zip \
-            "https://storage.googleapis.com/chrome-for-testing-public/${LATEST}/linux64/chrome-linux64.zip"
-          unzip -q chrome-linux64.zip -d chrome-bin
-
-          # 3) Download & unzip matching Chromedriver
-          wget -q -O chromedriver-linux64.zip \
-            "https://storage.googleapis.com/chrome-for-testing-public/${LATEST}/linux64/chromedriver-linux64.zip"
-          unzip -q chromedriver-linux64.zip
-
-          # 4) Move binaries into PATH
-          sudo mv chrome-bin/chrome-linux64/* /usr/local/bin/
-          sudo mv chromedriver /usr/local/bin/chromedriver
-
+          # Copy your bundled Chromedriver into PATH
+          sudo mv bin/chromedriver /usr/local/bin/chromedriver
           sudo chmod +x /usr/local/bin/chromedriver
-          sudo chmod +x /usr/local/bin/google-chrome-stable || true
 
-          # Verify
+          # Sanity-check
           which chromedriver
-          which google-chrome
+          which chromium-browser
 
       - name: Install Python deps
         run: pip install --no-cache-dir -r requirements.txt
@@ -58,4 +40,6 @@ jobs:
           CHECK_INTERVAL: 10
           LOG: true
           CHROMEDRIVER_PATH: /usr/local/bin/chromedriver
+          # Point Selenium to use the system Chromium binary
+          BROWSER_BINARY: /usr/bin/chromium-browser
         run: python main.py
