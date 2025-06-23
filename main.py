@@ -259,5 +259,11 @@ def check_once():
 
 
 if __name__ == "__main__":
-    log("⭐️ AmazonWatcher one-shot run starting…")
-    check_once()
+    log("⭐️ AmazonWatcher continuous mode starting…")
+    while True:
+        try:
+            check_once()
+        except Exception as e:
+            log(f"Error in check loop: {e}")
+        log("Sleeping for 60 seconds…")
+        time.sleep(60)
