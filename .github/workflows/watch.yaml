@@ -1,4 +1,3 @@
-# .github/workflows/watch.yml
 name: Amazon Watcher
 
 on:
@@ -9,26 +8,50 @@ on:
 jobs:
   watch:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v3
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.x'
-      - name: Install system deps (Chrome & Chromedriver)
+
+      - name: Install Chrome for Testing & Chromedriver
         run: |
           sudo apt-get update
-          sudo apt-get install -y wget gnupg unzip
-          wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
-          echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" | sudo tee /etc/apt/sources.list.d/google-chrome.list
-          sudo apt-get update
-          sudo apt-get install -y google-chrome-stable
-          CHROME_VER=$(google-chrome --version | grep -oP '\d+\.\d+\.\d+')
-          wget -O chromedriver.zip "https://chromedriver.storage.googleapis.com/${CHROME_VER}/chromedriver_linux64.zip"
-          unzip chromedriver.zip
-          sudo mv chromedriver /usr/local/bin/
+          sudo apt-get install -y curl jq unzip
+
+          # 1) Fetch latest stable version number
+          LATEST=$(curl -s https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions.json \
+            | jq -r '.channels.Stable.version')
+
+          echo "Using Chrome for Testing version: $LATEST"
+
+          # 2) Download & unzip Chrome for Testing
+          wget -q -O chrome-linux64.zip \
+            "https://storage.googleapis.com/chrome-for-testing-public/${LATEST}/linux64/chrome-linux64.zip"
+          unzip -q chrome-linux64.zip -d chrome-bin
+
+          # 3) Download & unzip matching Chromedriver
+          wget -q -O chromedriver-linux64.zip \
+            "https://storage.googleapis.com/chrome-for-testing-public/${LATEST}/linux64/chromedriver-linux64.zip"
+          unzip -q chromedriver-linux64.zip
+
+          # 4) Move binaries into PATH
+          sudo mv chrome-bin/chrome-linux64/* /usr/local/bin/
+          sudo mv chromedriver /usr/local/bin/chromedriver
+
+          sudo chmod +x /usr/local/bin/chromedriver
+          sudo chmod +x /usr/local/bin/google-chrome-stable || true
+
+          # Verify
+          which chromedriver
+          which google-chrome
+
       - name: Install Python deps
         run: pip install --no-cache-dir -r requirements.txt
+
       - name: Run Amazon Watcher
         env:
           FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
