@@ -111,15 +111,16 @@ def send_telegram(token: str, chat_id: str, text: str):
         log(f"Telegram error: {e}")
 
 
-def set_italy_delivery_once(drv, wait):
+def set_italy_delivery_once(drv, wait):        
     try:
-        page_html = drv.page_source
-        log("🔍 Page HTML snapshot (first 5000 characters):")
-        log(page_html[:5000])
-    except Exception as e:
-        log(f"⚠️ Could not save page HTML: {type(e).__name__} - {e}")
-        
-    try:
+        try:
+            log("🔍 Checking for anti-bot validation button…")
+            validate_btn = drv.find_element(By.XPATH, "//button[contains(text(), 'Continua con gli acquisti')]")
+            validate_btn.click()
+            log("✅ Clicked 'Continua con gli acquisti' button")
+            time.sleep(3)
+        except:
+            log("ℹ️ No anti-bot button detected, continuing normally")
         log("→ Setting delivery to Italy (00049)…")
         wait.until(
             EC.element_to_be_clickable((By.ID, "nav-global-location-slot"))
