@@ -117,16 +117,22 @@ def set_italy_delivery_once(drv, wait):
         wait.until(
             EC.element_to_be_clickable((By.ID, "nav-global-location-popover-link"))
         ).click()
+        log("→ Clicked the container")
         zip_in = wait.until(
             EC.presence_of_element_located((By.ID, "GLUXZipUpdateInput"))
         )
+        log("→ Found Input field")
         zip_in.clear()
+        log("→ Cleared")
         zip_in.send_keys("00049", Keys.ENTER)
+        log("→ Send and enter")
         time.sleep(4)
         pop = wait.until(
             EC.presence_of_element_located((By.CLASS_NAME, "a-popover-footer"))
         )
+        log("→ Found footer")
         pop.find_element(By.XPATH, "./*").click()
+        log("→ Clicked span")
         time.sleep(4)
         drv.refresh()
         time.sleep(4)
