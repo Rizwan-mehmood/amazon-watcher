@@ -1,0 +1,38 @@
+# .github/workflows/watch.yml
+name: Amazon Watcher
+
+on:
+  schedule:
+    - cron:  '*/5 * * * *'
+  workflow_dispatch:
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+      - name: Install system deps (Chrome & Chromedriver)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget gnupg unzip
+          wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
+          echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" | sudo tee /etc/apt/sources.list.d/google-chrome.list
+          sudo apt-get update
+          sudo apt-get install -y google-chrome-stable
+          CHROME_VER=$(google-chrome --version | grep -oP '\d+\.\d+\.\d+')
+          wget -O chromedriver.zip "https://chromedriver.storage.googleapis.com/${CHROME_VER}/chromedriver_linux64.zip"
+          unzip chromedriver.zip
+          sudo mv chromedriver /usr/local/bin/
+      - name: Install Python deps
+        run: pip install --no-cache-dir -r requirements.txt
+      - name: Run Amazon Watcher
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+          CHECK_INTERVAL: 10
+          LOG: true
+          CHROMEDRIVER_PATH: /usr/local/bin/chromedriver
+        run: python main.py
