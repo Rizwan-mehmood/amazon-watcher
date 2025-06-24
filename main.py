@@ -117,15 +117,18 @@ def send_telegram(token: str, chat_id: str, text: str):
 
 def set_italy_delivery_once(drv, wait):
     try:
+        drv.refresh()
+        time.sleep(4)
         log("→ Setting delivery to Italy (00049)…")
         wait.until(
             EC.element_to_be_clickable((By.ID, "nav-global-location-popover-link"))
         ).click()
-        time.sleep(2)
+        time.sleep(5)
         zip_in = wait.until(
             EC.presence_of_element_located((By.ID, "GLUXZipUpdateInput"))
         )
         zip_in.clear()
+        time.sleep(2)
         zip_in.send_keys("00049", Keys.ENTER)
         time.sleep(4)
         pop = wait.until(
