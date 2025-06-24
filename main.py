@@ -410,10 +410,12 @@ def check_once():
                             except:
                                 log("   – offer missing ships-from")
                             try:
-                                sb = offer.find_element(
-                                    By.XPATH,
-                                    ".//div[@id='aod-offer-soldBy']//a[contains(@class,'a-link-normal')]",
-                                ).text.strip()
+                                # pick either the <a> or the <span> that carries the seller name
+                                sb_el = offer.find_element(
+                                    By.CSS_SELECTOR,
+                                    "#aod-offer-soldBy a.a-link-normal, #aod-offer-soldBy span.a-color-base"
+                                )
+                                sb = sb_el.text.strip()
                             except:
                                 log("   – offer missing sold-by")
 
