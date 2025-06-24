@@ -121,6 +121,7 @@ def set_italy_delivery_once(drv, wait):
         wait.until(
             EC.element_to_be_clickable((By.ID, "nav-global-location-popover-link"))
         ).click()
+        time.sleep(2)
         zip_in = wait.until(
             EC.presence_of_element_located((By.ID, "GLUXZipUpdateInput"))
         )
@@ -153,6 +154,7 @@ def check_once():
     if links:
         log(f"→ Found {len(links)} link(s) in Firestore, setting delivery…")
         drv.get("https://www.amazon.it/-/en/ref=nav_logo")
+        time.sleep(8)
         set_italy_delivery_once(drv, wait)
     else:
         log("→ No links in Firestore, skipping delivery setup")
