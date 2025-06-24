@@ -56,6 +56,10 @@ def load_links():
 
 
 def save_link_state(doc_id: str, fields: dict):
+    # if we're marking it available now, and no timestamp was provided, add one
+    if fields.get("available") is True and "available_since" not in fields:
+        fields["available_since"] = time.time()
+    # allow callers to explicitly delete available_since by passing firestore.DELETE_FIELD
     db.collection("links").document(doc_id).update(fields)
 
 
@@ -111,43 +115,26 @@ def send_telegram(token: str, chat_id: str, text: str):
         log(f"Telegram error: {e}")
 
 
-def set_italy_delivery_once(drv, wait):        
+def set_italy_delivery_once(drv, wait):
     try:
-        try:
-            log("🔍 Checking for anti-bot validation button…")
-            validate_btn = drv.find_element(By.XPATH, "//button[contains(text(), 'Continua con gli acquisti')]")
-            validate_btn.click()
-            log("✅ Clicked 'Continua con gli acquisti' button")
-            time.sleep(3)
-        except:
-            log("ℹ️ No anti-bot button detected, continuing normally")
         log("→ Setting delivery to Italy (00049)…")
         wait.until(
-            EC.element_to_be_clickable((By.ID, "nav-global-location-slot"))
+            EC.element_to_be_clickable((By.ID, "nav-global-location-popover-link"))
         ).click()
-        log("→ Clicked the container")
         zip_in = wait.until(
             EC.presence_of_element_located((By.ID, "GLUXZipUpdateInput"))
         )
-        log("→ Found Input field")
         zip_in.clear()
-        log("→ Cleared")
         zip_in.send_keys("00049", Keys.ENTER)
-        log("→ Send and enter")
         time.sleep(4)
         pop = wait.until(
             EC.presence_of_element_located((By.CLASS_NAME, "a-popover-footer"))
         )
-        log("→ Found footer")
         pop.find_element(By.XPATH, "./*").click()
-        log("→ Clicked span")
-        time.sleep(4)
-        drv.refresh()
         time.sleep(4)
         log("→ Delivery set to Italy 00049")
-    except Exception as e:
-        log(f"❌ Failed to set Italy delivery: {type(e).__name__} - {e}")
-
+    except Exception:
+        log("→ Could not set Italy delivery (already set?)")
 
 
 # ─── Core Logic ─────────────────────────────────────────
@@ -155,30 +142,49 @@ def check_once():
     cfg = load_config()
     token = cfg.get("token")
     chat_id = cfg.get("chat_id")
+    cool = cfg.get("cool_time", 300)
     if not token or not chat_id:
         raise RuntimeError("Missing token/chat_id in Firestore config")
 
     drv = init_driver()
-    wait = WebDriverWait(drv, 10)
+    wait = WebDriverWait(drv, 5)
 
     drv.get("https://www.amazon.it/-/en/ref=nav_logo")
-    links = list(load_links())
-    if links:
-        log(f"→ Found {len(links)} link(s) in Firestore, setting delivery…")
-        set_italy_delivery_once(drv, wait)
-    else:
-        log("→ No links in Firestore, skipping delivery setup")
+    set_italy_delivery_once(drv, wait)
 
     try:
         for doc_id, item in load_links():
+            url = item["url"]
+
+            # ─── Cool-down logic for already-available links ─────────────
+            if item.get("available"):
+                now = time.time()
+                since = item.get("available_since")
+                # First time we see available=true: record timestamp and skip
+                if since is None:
+                    log(f"→ {url} marked available; starting cool-down of {cool}s")
+                    save_link_state(doc_id, {"available_since": now})
+                    continue
+
+                elapsed = now - since
+                if elapsed < cool:
+                    log(f"→ {url} still in cool-down ({elapsed:.0f}/{cool}s), skipping")
+                    continue
+                # Cool-down expired: reset and re-check
+                log(f"→ Cool-down expired for {url}; re-checking availability")
+                save_link_state(
+                    doc_id,
+                    {"available": False, "available_since": firestore.DELETE_FIELD},
+                )
+                item["available"] = False
+            # ─────────────────────────────────────────────────────────────
             if item.get("available"):
                 continue
 
-            url = item["url"]
             log(f"Loading page: {url}")
             try:
                 drv.get(url)
-                time.sleep(8)
+                time.sleep(4)
 
                 # ─── Out of stock? ────────────────────────────────
                 try:
@@ -203,7 +209,8 @@ def check_once():
                     if _check_core_offer(drv, wait, item):
                         save_link_state(doc_id, {"available": True})
                         msg = (
-                            f"✅ AMAZON CORE OFFER FOUND!\n{url}\n"
+                            f"✅ {item['name']} is back in stock!\n"
+                            f"✅ AMAZON OFFER FOUND!\n{url}\n"
                             f"💰 €{_CORE_PRICE:.2f} (≤ €{item['target_price']:.2f})\n"
                             f"🚚 Ships from: {_CORE_SHIPS}\n"
                             f"🏷️ Sold by: {_CORE_SOLD}"
@@ -240,7 +247,7 @@ def check_once():
                 try:
                     drv.execute_script("arguments[0].scrollIntoView(true);", aoc)
                     aoc.click()
-                    time.sleep(6)
+                    time.sleep(4)
                     log("→ Offers list opened")
                 except Exception as e:
                     log(f"→ Failed to open offers list: {e}")
@@ -276,8 +283,8 @@ def check_once():
                             log(f"→ Pinned-offer: offscreen raw='{raw}'")
                         pinned_price = float(raw.replace("€", "").replace(",", ""))
                         log(f"→ Parsed pinned price: €{pinned_price:.2f}")
-                    except Exception as e:
-                        log(f"→ Pinned-offer: price missing or parse failed: {e}")
+                    except:
+                        log(f"→ Pinned-offer: price missing or parse failed")
                         raise  # stop pinned-check if we can’t get a price
 
                     # 2) Ships from
@@ -285,7 +292,7 @@ def check_once():
                         # look under the right-hand grid for the “aod-offer-shipsFrom” entry
                         ships = pinned.find_elements(
                             By.CSS_SELECTOR,
-                            "#aod-offer-shipsFrom .a-fixed-left-grid-col.a-col-right span.a-size-small.a-color-base",
+                            "#aod-offer-shipsFrom .a-fixed-left-grid .a-fixed-left-grid-inner .a-fixed-left-grid-col.a-col-right .a-size-small.a-color-base",
                         )
                         if ships:
                             sf = ships[0].text.strip()
@@ -301,7 +308,7 @@ def check_once():
                     try:
                         sellers = pinned.find_elements(
                             By.CSS_SELECTOR,
-                            "#aod-offer-soldBy .a-fixed-left-grid-col.a-col-right a.a-size-small.a-link-normal",
+                            "#aod-offer-soldBy .a-fixed-left-grid .a-fixed-left-grid-inner .a-fixed-left-grid-col.a-col-right a.a-size-small.a-link-normal",
                         )
                         if sellers:
                             sb = sellers[0].text.strip()
@@ -320,7 +327,8 @@ def check_once():
                         and (not item.get("check_sold") or "amazon" in sb.lower())
                     ):
                         msg = (
-                            f"✅ AMAZON PINNED OFFER FOUND!\n{url}\n"
+                            f"✅ {item['name']} is back in stock!\n"
+                            f"✅ AMAZON OFFER FOUND!\n{url}\n"
                             f"💰 €{pinned_price:.2f} (≤ €{item['target_price']:.2f})\n"
                             f"🚚 Ships from: {sf}\n"
                             f"🏷️ Sold by: {sb}"
@@ -332,8 +340,8 @@ def check_once():
                     else:
                         log("→ Pinned offer did not meet criteria")
 
-                except Exception as e:
-                    log(f"→ Skipping pinned-offer: {e}")
+                except:
+                    log(f"→ Skipping pinned-offer")
 
                 # ─── Scroll to load offers for up to 20 s ─────────────────────
                 try:
@@ -416,6 +424,7 @@ def check_once():
 
                             # match!
                             msg = (
+                                f"✅ {item['name']} is back in stock!\n"
                                 f"✅ AMAZON OFFER FOUND!\n{url}\n"
                                 f"💰 €{price:.2f} (≤ €{item['target_price']:.2f})\n"
                                 f"🚚 Ships from: {sf}\n"
