@@ -352,8 +352,11 @@ def check_single_link(doc_id, item, token, chat_id, cool_time):
                         )
                         continue
 
+                time.sleep(4)
+
                 try:
                     drv.execute_script("arguments[0].scrollIntoView(true);", aoc)
+                    time.sleep(2)
                     aoc.click()
                     time.sleep(2)
                     log("→ Offers list opened")
