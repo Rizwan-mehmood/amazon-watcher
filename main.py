@@ -115,10 +115,11 @@ def send_telegram(token: str, chat_id: str, text: str):
         log(f"Telegram error: {e}")
 
 
+# ─── Set Italy Delivery ────────────────────────────────
 def set_italy_delivery_once(drv, wait):
     try:
         drv.refresh()
-        time.sleep(4)
+        time.sleep(2)
         log("→ Setting delivery to Italy (00049)…")
         wait.until(
             EC.element_to_be_clickable((By.ID, "nav-global-location-popover-link"))
@@ -128,14 +129,14 @@ def set_italy_delivery_once(drv, wait):
             EC.presence_of_element_located((By.ID, "GLUXZipUpdateInput"))
         )
         zip_in.clear()
-        time.sleep(2)
+        time.sleep(1)
         zip_in.send_keys("00049", Keys.ENTER)
-        time.sleep(4)
+        time.sleep(2)
         pop = wait.until(
             EC.presence_of_element_located((By.CLASS_NAME, "a-popover-footer"))
         )
         pop.find_element(By.XPATH, "./*").click()
-        time.sleep(4)
+        time.sleep(1)
         log("→ Delivery set to Italy 00049")
     except Exception:
         log("→ Could not set Italy delivery (already set?)")
@@ -152,12 +153,12 @@ def check_once():
 
     drv = init_driver()
     wait = WebDriverWait(drv, 5)
-    
+
     links = list(load_links())
     if links:
         log(f"→ Found {len(links)} link(s) in Firestore, setting delivery…")
         drv.get("https://www.amazon.it/-/en/ref=nav_logo")
-        time.sleep(8)
+        time.sleep(2)
         set_italy_delivery_once(drv, wait)
     else:
         log("→ No links in Firestore, skipping delivery setup")
@@ -194,7 +195,7 @@ def check_once():
             log(f"Loading page: {url}")
             try:
                 drv.get(url)
-                time.sleep(4)
+                time.sleep(2)
 
                 # ─── Out of stock? ────────────────────────────────
                 try:
@@ -257,7 +258,7 @@ def check_once():
                 try:
                     drv.execute_script("arguments[0].scrollIntoView(true);", aoc)
                     aoc.click()
-                    time.sleep(4)
+                    time.sleep(2)
                     log("→ Offers list opened")
                 except Exception as e:
                     log(f"→ Failed to open offers list: {e}")
@@ -362,7 +363,7 @@ def check_once():
                     )
                     start = time.time()
 
-                    while time.time() - start < 10:
+                    while time.time() - start < 5:
                         drv.execute_script(
                             "arguments[0].scrollTo(0, arguments[0].scrollHeight);",
                             scroller,
@@ -416,7 +417,7 @@ def check_once():
                                 # pick either the <a> or the <span> that carries the seller name
                                 sb_el = offer.find_element(
                                     By.CSS_SELECTOR,
-                                    "#aod-offer-soldBy a.a-link-normal, #aod-offer-soldBy span.a-color-base"
+                                    "#aod-offer-soldBy a.a-link-normal, #aod-offer-soldBy span.a-color-base",
                                 )
                                 sb = sb_el.text.strip()
                             except:
@@ -532,5 +533,5 @@ if __name__ == "__main__":
             check_once()
         except Exception as e:
             log(f"Error in check loop: {e}")
-        log("Sleeping for 300 seconds…")
-        time.sleep(60)
+        log("Sleeping for 10 seconds…")
+        time.sleep(10)
