@@ -679,10 +679,10 @@ if __name__ == "__main__":
                         )
                         active_doc_ids.add(doc_id)
 
-            removed = active_doc_ids - current_ids
-            for doc_id in removed:
-                log(f"→ Link {doc_id} was deleted; removing from active set")
-                active_doc_ids.remove(doc_id)
+                removed = active_doc_ids - current_ids
+                for doc_id in removed:
+                    log(f"→ Link {doc_id} was deleted; removing from active set")
+                    active_doc_ids.remove(doc_id)
 
             # 3) sleep before polling again
             log(f"→ Sleeping {60}s before next poll…")
