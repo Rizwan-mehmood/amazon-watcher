@@ -77,9 +77,9 @@ def init_driver():
     opts.add_experimental_option("useAutomationExtension", False)
 
     # Window size randomization
-    width = random.randint(1200, 1920)
-    height = random.randint(800, 1080)
-    opts.add_argument(f"--window-size={width},{height}")
+    #width = random.randint(1200, 1920)
+    #height = random.randint(800, 1080)
+    #opts.add_argument(f"--window-size={width},{height}")
 
     # User-Agent randomization
     chrome_version = f"{random.randint(100,115)}.0.{random.randint(1000,5000)}.{random.randint(1,200)}"
