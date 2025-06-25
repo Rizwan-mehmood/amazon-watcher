@@ -232,8 +232,10 @@ def set_italy_delivery_once(drv, wait):
         pop.find_element(By.XPATH, "./*").click()
         time.sleep(1)
         log("→ Delivery set to Italy 00049")
+        return True
     except Exception:
         log("→ Could not set Italy delivery (already set?)")
+        return False
 
 
 def check_single_link(doc_id, item, token, chat_id, cool_time):
@@ -255,7 +257,14 @@ def check_single_link(doc_id, item, token, chat_id, cool_time):
 
         drv.get("https://www.amazon.it/-/en/ref=nav_logo")
         time.sleep(2)
-        set_italy_delivery_once(drv, wait)
+        if not set_italy_delivery_once(drv, wait):
+            try:
+                drv.quit()
+            except:
+                pass
+            log(f"[{doc_id}] Browser closed; sleeping 10s")
+            time.sleep(10)
+            continue
 
         try:
             log(f"[{doc_id}] Loading page: {url}")
