@@ -266,7 +266,6 @@ def check_single_link(doc_id, item, token, chat_id, cool_time):
     
             elapsed = now - since
             if elapsed < cool_time:
-                log(f"→ {url} still in cool-down ({elapsed:.0f}/{cool_time}s), skipping")
                 continue
     
             # cooldown expired
