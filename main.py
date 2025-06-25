@@ -62,42 +62,136 @@ def save_link_state(doc_id: str, fields: dict):
     # allow callers to explicitly delete available_since by passing firestore.DELETE_FIELD
     db.collection("links").document(doc_id).update(fields)
 
-
-# ─── Selenium driver ───────────────────────────────────
-_driver = None
-
-
 def init_driver():
-    global _driver
-    if _driver:
-        return _driver
-
     opts = Options()
-    opts.add_argument("--headless")
+
+    # Headless configuration
+    # opts.add_argument("--headless=new")  # Use new headless mode
     opts.add_argument("--no-sandbox")
     opts.add_argument("--disable-gpu")
+    opts.add_argument("--disable-dev-shm-usage")
     opts.add_argument("--disable-blink-features=AutomationControlled")
-    opts.add_experimental_option("excludeSwitches", ["enable-automation"])
+    opts.add_experimental_option(
+        "excludeSwitches", ["enable-automation", "enable-logging"]
+    )
     opts.add_experimental_option("useAutomationExtension", False)
 
-    ua = (
-        "Mozilla/5.0 (X11; Linux x86_64) "
-        f"AppleWebKit/537.36 (KHTML, like Gecko) "
-        f"Chrome/{random.randint(100,115)}.0.{random.randint(1000,5000)}.100 Safari/537.36"
-    )
+    # Window size randomization
+    width = random.randint(1200, 1920)
+    height = random.randint(800, 1080)
+    opts.add_argument(f"--window-size={width},{height}")
+
+    # User-Agent randomization
+    chrome_version = f"{random.randint(100,115)}.0.{random.randint(1000,5000)}.{random.randint(1,200)}"
+    platforms = [
+        "(Windows NT 10.0; Win64; x64)",
+        "(X11; Linux x86_64)",
+        "(Macintosh; Intel Mac OS X 13_5)",
+    ]
+    ua = f"Mozilla/5.0 {random.choice(platforms)} AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{chrome_version} Safari/537.36"
     opts.add_argument(f"user-agent={ua}")
+
+    # Additional stealth parameters
+    opts.add_argument(f"--lang=en-US,en;q=0.{random.randint(5,9)}")
+    opts.add_argument("--disable-webgl")
+    opts.add_argument("--disable-popup-blocking")
+    opts.set_capability("goog:loggingPrefs", {"performance": "ALL"})
 
     try:
         service = Service(CHROMEDRIVER)
         _driver = webdriver.Chrome(service=service, options=opts)
+
+        # Execute multiple CDP commands
+        stealth_script = """
+            const newProto = navigator.__proto__;
+            delete newProto.webdriver;
+            navigator.__proto__ = newProto;
+            window.navigator.chrome = {
+                app: {
+                    isInstalled: false,
+                },
+                webstore: {
+                    onInstallStageChanged: {},
+                    onDownloadProgress: {},
+                },
+                runtime: {
+                    PlatformOs: {
+                        MAC: 'mac',
+                        WIN: 'win',
+                        ANDROID: 'android',
+                        CROS: 'cros',
+                        LINUX: 'linux',
+                        OPENBSD: 'openbsd',
+                    },
+                    PlatformArch: {
+                        ARM: 'arm',
+                        X86_32: 'x86-32',
+                        X86_64: 'x86-64',
+                    },
+                    PlatformNaclArch: {
+                        ARM: 'arm',
+                        X86_32: 'x86-32',
+                        X86_64: 'x86-64',
+                    },
+                    RequestUpdateCheckStatus: {
+                        THROTTLED: 'throttled',
+                        NO_UPDATE: 'no_update',
+                        UPDATE_AVAILABLE: 'update_available',
+                    },
+                    OnInstalledReason: {
+                        INSTALL: 'install',
+                        UPDATE: 'update',
+                        CHROME_UPDATE: 'chrome_update',
+                        SHARED_MODULE_UPDATE: 'shared_module_update',
+                    },
+                },
+            };
+            Object.defineProperty(navigator, 'plugins', {
+                get: () => [{
+                    name: 'Chrome PDF Plugin',
+                    filename: 'internal-pdf-viewer',
+                    description: 'Portable Document Format',
+                    version: '1',
+                }],
+            });
+            Object.defineProperty(navigator, 'languages', {
+                get: () => ['en-US', 'en'],
+            });
+            Object.defineProperty(navigator, 'deviceMemory', {
+                get: () => 8,
+            });
+            Object.defineProperty(navigator, 'hardwareConcurrency', {
+                get: () => 4,
+            });
+            Object.defineProperty(Notification, 'permission', {
+                get: () => 'denied',
+            });
+        """
+
+        # Apply stealth parameters
+        _driver.execute_cdp_cmd("Network.setUserAgentOverride", {"userAgent": ua})
+        _driver.execute_cdp_cmd(
+            "Emulation.setScriptExecutionDisabled", {"value": False}
+        )
+        _driver.execute_cdp_cmd(
+            "Page.addScriptToEvaluateOnNewDocument", {"source": stealth_script}
+        )
+
+        # Disable automation flags
         _driver.execute_cdp_cmd(
             "Page.addScriptToEvaluateOnNewDocument",
             {
-                "source": "Object.defineProperty(navigator, 'webdriver', {get: () => false});"
+                "source": """
+                    Object.defineProperty(navigator, 'webdriver', {
+                        get: () => undefined
+                    })
+                """
             },
         )
-        log("Initialized headless ChromeDriver.")
+
+        log("Initialized undetectable ChromeDriver")
         return _driver
+
     except WebDriverException as e:
         log(f"WebDriver init failed: {e}")
         raise
@@ -119,7 +213,7 @@ def send_telegram(token: str, chat_id: str, text: str):
 def set_italy_delivery_once(drv, wait):
     try:
         drv.refresh()
-        time.sleep(4)
+        time.sleep(2)
         log("→ Setting delivery to Italy (00049)…")
         wait.until(
             EC.element_to_be_clickable((By.ID, "nav-global-location-popover-link"))
@@ -129,43 +223,38 @@ def set_italy_delivery_once(drv, wait):
             EC.presence_of_element_located((By.ID, "GLUXZipUpdateInput"))
         )
         zip_in.clear()
-        time.sleep(2)
+        time.sleep(1)
         zip_in.send_keys("00049", Keys.ENTER)
-        time.sleep(4)
+        time.sleep(2)
         pop = wait.until(
             EC.presence_of_element_located((By.CLASS_NAME, "a-popover-footer"))
         )
         pop.find_element(By.XPATH, "./*").click()
-        time.sleep(4)
-        log("New")
+        time.sleep(1)
         log("→ Delivery set to Italy 00049")
     except Exception:
         log("→ Could not set Italy delivery (already set?)")
 
 
-# ─── Core Logic ─────────────────────────────────────────
-def check_once():
-    cfg = load_config()
-    token = cfg.get("token")
-    chat_id = cfg.get("chat_id")
-    cool = cfg.get("cool_time", 300)
-    if not token or not chat_id:
-        raise RuntimeError("Missing token/chat_id in Firestore config")
+def check_single_link(doc_id, item, token, chat_id, cool_time):
+    """
+    Open a fresh browser for item['url'], run the exact same checks
+    you had in check_once() for one link, then quit & sleep 10s.
+    Loop forever.
+    """
+    url = item["url"]
 
-    drv = init_driver()
-    wait = WebDriverWait(drv, 5)
+    while True:
+        # 1) new browser instance
+        drv = init_driver()
+        wait = WebDriverWait(drv, 5)
 
-    links = list(load_links())
-    if links:
-        log(f"→ Found {len(links)} link(s) in Firestore, setting delivery…")
         drv.get("https://www.amazon.it/-/en/ref=nav_logo")
-        time.sleep(4)
+        time.sleep(2)
         set_italy_delivery_once(drv, wait)
-    else:
-        log("→ No links in Firestore, skipping delivery setup")
 
-    try:
-        for doc_id, item in load_links():
+        try:
+            log(f"[{doc_id}] Loading page: {url}")
             url = item["url"]
 
             # ─── Cool-down logic for already-available links ─────────────
@@ -174,13 +263,15 @@ def check_once():
                 since = item.get("available_since")
                 # First time we see available=true: record timestamp and skip
                 if since is None:
-                    log(f"→ {url} marked available; starting cool-down of {cool}s")
+                    log(f"→ {url} marked available; starting cool-down of {cool_time}s")
                     save_link_state(doc_id, {"available_since": now})
                     continue
 
                 elapsed = now - since
-                if elapsed < cool:
-                    log(f"→ {url} still in cool-down ({elapsed:.0f}/{cool}s), skipping")
+                if elapsed < cool_time:
+                    log(
+                        f"→ {url} still in cool-down ({elapsed:.0f}/{cool_time}s), skipping"
+                    )
                     continue
                 # Cool-down expired: reset and re-check
                 log(f"→ Cool-down expired for {url}; re-checking availability")
@@ -194,6 +285,7 @@ def check_once():
                 continue
 
             log(f"Loading page: {url}")
+
             try:
                 drv.get(url)
                 time.sleep(2)
@@ -461,14 +553,19 @@ def check_once():
 
             except TimeoutException as e:
                 log(f"Timeout on {url}: {e}")
-            except Exception as e:
-                log(f"Error checking {url}: {e}")
 
-    finally:
-        global _driver
-        if _driver:
-            _driver.quit()
-            _driver = None
+        except Exception as e:
+            log(f"Error checking {url}: {e}")
+
+        finally:
+            # 2) teardown
+            try:
+                drv.quit()
+            except:
+                pass
+            log(f"[{doc_id}] Browser closed; sleeping 10s")
+
+        time.sleep(10)
 
 
 def _safe_text(ctx, by, selector):
@@ -527,12 +624,27 @@ def _check_core_offer(drv, wait, item):
     except Exception:
         return False
 
+
 if __name__ == "__main__":
-    log("⭐️ AmazonWatcher continuous mode starting…")
-    while True:
-        try:
-            check_once()
-        except Exception as e:
-            log(f"Error in check loop: {e}")
-        log("Sleeping for 10 seconds…")
-        time.sleep(10)
+    """
+    Spawn one process per link, each running check_single_link()
+    forever and independently.
+    """
+    from concurrent.futures import ProcessPoolExecutor
+
+    log("⭐️ AmazonWatcher concurrent mode starting…")
+
+    cfg = load_config()
+    token = cfg.get("token")
+    chat_id = cfg.get("chat_id")
+    cool = cfg.get("cool_time", 300)
+
+    all_links = list(load_links())
+    if not all_links:
+        log("→ No links found in Firestore; exiting")
+        exit(0)
+
+    log(f"→ Spawning {len(all_links)} parallel workers…")
+    with ProcessPoolExecutor(max_workers=len(all_links)) as exe:
+        for doc_id, item in all_links:
+            exe.submit(check_single_link, doc_id, item, token, chat_id, cool)
