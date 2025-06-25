@@ -331,6 +331,8 @@ def check_single_link(doc_id, item, token, chat_id, cool_time):
                 except Exception as e:
                     log(f"→ Core PDP check failed: {e}")
 
+                time.sleep(3)
+
                 # ─── Open all buying choices ────────────────────────
                 try:
                     # try primary button
