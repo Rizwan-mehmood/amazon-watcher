@@ -268,7 +268,6 @@ def check_single_link(doc_id, item, token, chat_id, cool_time):
             continue
 
         try:
-            log(f"[{doc_id}] Loading page: {url}")
             url = item["url"]
 
             # ─── Cool-down logic for already-available links ─────────────
@@ -294,9 +293,6 @@ def check_single_link(doc_id, item, token, chat_id, cool_time):
                     {"available": False, "available_since": firestore.DELETE_FIELD},
                 )
                 item["available"] = False
-            # ─────────────────────────────────────────────────────────────
-            if item.get("available"):
-                continue
 
             log(f"Loading page: {url}")
 
