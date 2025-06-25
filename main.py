@@ -263,7 +263,7 @@ def check_single_link(doc_id, item, token, chat_id, cool_time):
             except:
                 pass
             log(f"[{doc_id}] Browser closed; sleeping 10s")
-            time.sleep(10)
+            time.sleep(5)
             continue
 
         try:
@@ -583,7 +583,7 @@ def check_single_link(doc_id, item, token, chat_id, cool_time):
                 pass
             log(f"[{doc_id}] Browser closed; sleeping 10s")
 
-        time.sleep(10)
+        time.sleep(5)
 
 
 def _safe_text(ctx, by, selector):
@@ -686,4 +686,4 @@ if __name__ == "__main__":
 
             # 3) sleep before polling again
             log(f"→ Sleeping {60}s before next poll…")
-            time.sleep(60)
+            time.sleep(10)
