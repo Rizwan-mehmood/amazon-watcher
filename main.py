@@ -245,6 +245,10 @@ def check_single_link(doc_id, item, token, chat_id, cool_time):
     url = item["url"]
 
     while True:
+        doc = db.collection("links").document(doc_id).get()
+        if not doc.exists:
+            log(f"[{doc_id}] Link deleted—shutting down worker")
+            return
         # 1) new browser instance
         drv = init_driver()
         wait = WebDriverWait(drv, 5)
@@ -651,6 +655,7 @@ if __name__ == "__main__":
             if not all_links:
                 log("→ No links found in Firestore; will retry shortly")
             else:
+                current_ids = {doc_id for doc_id, _ in all_links}
                 # 2) for any new doc_id, spawn a worker
                 for doc_id, item in all_links:
                     if doc_id not in active_doc_ids:
@@ -659,6 +664,11 @@ if __name__ == "__main__":
                             check_single_link, doc_id, item, token, chat_id, cool
                         )
                         active_doc_ids.add(doc_id)
+
+            removed = active_doc_ids - current_ids
+            for doc_id in removed:
+                log(f"→ Link {doc_id} was deleted; removing from active set")
+                active_doc_ids.remove(doc_id)
 
             # 3) sleep before polling again
             log(f"→ Sleeping {60}s before next poll…")
