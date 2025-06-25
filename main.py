@@ -119,7 +119,7 @@ def send_telegram(token: str, chat_id: str, text: str):
 def set_italy_delivery_once(drv, wait):
     try:
         drv.refresh()
-        time.sleep(2)
+        time.sleep(4)
         log("→ Setting delivery to Italy (00049)…")
         wait.until(
             EC.element_to_be_clickable((By.ID, "nav-global-location-popover-link"))
@@ -129,14 +129,15 @@ def set_italy_delivery_once(drv, wait):
             EC.presence_of_element_located((By.ID, "GLUXZipUpdateInput"))
         )
         zip_in.clear()
-        time.sleep(1)
-        zip_in.send_keys("00049", Keys.ENTER)
         time.sleep(2)
+        zip_in.send_keys("00049", Keys.ENTER)
+        time.sleep(4)
         pop = wait.until(
             EC.presence_of_element_located((By.CLASS_NAME, "a-popover-footer"))
         )
         pop.find_element(By.XPATH, "./*").click()
-        time.sleep(1)
+        time.sleep(4)
+        log("New")
         log("→ Delivery set to Italy 00049")
     except Exception:
         log("→ Could not set Italy delivery (already set?)")
@@ -158,7 +159,7 @@ def check_once():
     if links:
         log(f"→ Found {len(links)} link(s) in Firestore, setting delivery…")
         drv.get("https://www.amazon.it/-/en/ref=nav_logo")
-        time.sleep(2)
+        time.sleep(4)
         set_italy_delivery_once(drv, wait)
     else:
         log("→ No links in Firestore, skipping delivery setup")
