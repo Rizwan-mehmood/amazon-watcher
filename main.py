@@ -252,6 +252,31 @@ def check_single_link(doc_id, item, token, chat_id, cool_time):
         if not doc.exists:
             log(f"[{doc_id}] Link deleted—shutting down worker")
             return
+        item = doc.to_dict()
+
+        if item.get("available"):
+            now = time.time()
+            since = item.get("available_since")
+    
+            # first-time mark
+            if since is None:
+                log(f"→ {url} marked available; starting cool-down of {cool_time}s")
+                save_link_state(doc_id, {"available_since": now})
+                continue
+    
+            elapsed = now - since
+            if elapsed < cool_time:
+                log(f"→ {url} still in cool-down ({elapsed:.0f}/{cool_time}s), skipping")
+                continue
+    
+            # cooldown expired
+            log(f"→ Cool-down expired for {url}; resetting availability")
+            save_link_state(
+                doc_id,
+                {"available": False, "available_since": firestore.DELETE_FIELD},
+            )
+            continue
+            
         # 1) new browser instance
         drv = init_driver()
         wait = WebDriverWait(drv, 5)
@@ -269,31 +294,6 @@ def check_single_link(doc_id, item, token, chat_id, cool_time):
 
         try:
             url = item["url"]
-
-            # ─── Cool-down logic for already-available links ─────────────
-            if item.get("available"):
-                now = time.time()
-                since = item.get("available_since")
-                # First time we see available=true: record timestamp and skip
-                if since is None:
-                    log(f"→ {url} marked available; starting cool-down of {cool_time}s")
-                    save_link_state(doc_id, {"available_since": now})
-                    continue
-
-                elapsed = now - since
-                if elapsed < cool_time:
-                    log(
-                        f"→ {url} still in cool-down ({elapsed:.0f}/{cool_time}s), skipping"
-                    )
-                    continue
-                # Cool-down expired: reset and re-check
-                log(f"→ Cool-down expired for {url}; re-checking availability")
-                save_link_state(
-                    doc_id,
-                    {"available": False, "available_since": firestore.DELETE_FIELD},
-                )
-                item["available"] = False
-
             log(f"Loading page: {url}")
 
             try:
