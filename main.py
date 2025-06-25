@@ -627,24 +627,39 @@ def _check_core_offer(drv, wait, item):
 
 if __name__ == "__main__":
     """
-    Spawn one process per link, each running check_single_link()
-    forever and independently.
+    Continuously poll Firestore for new links, spawning one
+    process per link (existing or newly added) that runs
+    check_single_link() forever.
     """
     from concurrent.futures import ProcessPoolExecutor
 
-    log("⭐️ AmazonWatcher concurrent mode starting…")
+    log("⭐️ AmazonWatcher dynamic concurrent mode starting…")
 
     cfg = load_config()
     token = cfg.get("token")
     chat_id = cfg.get("chat_id")
     cool = cfg.get("cool_time", 300)
 
-    all_links = list(load_links())
-    if not all_links:
-        log("→ No links found in Firestore; exiting")
-        exit(0)
+    # Keep track of which doc_ids we already have workers for
+    active_doc_ids = set()
 
-    log(f"→ Spawning {len(all_links)} parallel workers…")
-    with ProcessPoolExecutor(max_workers=len(all_links)) as exe:
-        for doc_id, item in all_links:
-            exe.submit(check_single_link, doc_id, item, token, chat_id, cool)
+    # Use one executor for the lifetime of the script
+    with ProcessPoolExecutor() as executor:
+        while True:
+            # 1) fetch all current links
+            all_links = list(load_links())
+            if not all_links:
+                log("→ No links found in Firestore; will retry shortly")
+            else:
+                # 2) for any new doc_id, spawn a worker
+                for doc_id, item in all_links:
+                    if doc_id not in active_doc_ids:
+                        log(f"→ Detected new link {doc_id}; spawning worker")
+                        executor.submit(
+                            check_single_link, doc_id, item, token, chat_id, cool
+                        )
+                        active_doc_ids.add(doc_id)
+
+            # 3) sleep before polling again
+            log(f"→ Sleeping {60}s before next poll…")
+            time.sleep(60)
