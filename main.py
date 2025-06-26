@@ -214,12 +214,25 @@ def set_italy_delivery_once(drv, wait):
         log("→ Refreshing Webpage")
         drv.refresh()
         time.sleep(5)
+        try:
+            current = wait.until(
+                EC.presence_of_element_located(
+                    (By.ID, "glow-ingress-line2")
+                )
+            ).text.strip()
+            if "00049" in current:
+                log("→ Delivery already set to Italy (00049); skipping")
+                return True
+        except Exception:
+            # element not found or no text → fall through to setting
+            pass
+            
         log("→ Setting delivery to Italy (00049)…")
         wait.until(
             EC.element_to_be_clickable((By.ID, "nav-global-location-popover-link"))
         ).click()
         log("→ Clicked popup to open")
-        time.sleep(5)
+        time.sleep(2)
         zip_in = wait.until(
             EC.presence_of_element_located((By.ID, "GLUXZipUpdateInput"))
         )
@@ -229,14 +242,14 @@ def set_italy_delivery_once(drv, wait):
         time.sleep(2)
         zip_in.send_keys("00049", Keys.ENTER)
         log("→ Entered Adddress")
-        time.sleep(4)
+        time.sleep(2)
         pop = wait.until(
             EC.presence_of_element_located((By.CLASS_NAME, "a-popover-footer"))
         )
         log("→ Found Footer")
         pop.find_element(By.XPATH, "./*").click()
         log("→ Clicked Done")
-        time.sleep(4)
+        time.sleep(2)
         log("→ Delivery set to Italy 00049")
         return True
     except Exception as e:
@@ -259,27 +272,41 @@ def check_single_link(doc_id, item, token, chat_id, cool_time):
             return
         item = doc.to_dict()
 
+        # Cool Down time checking
         if item.get("available"):
             now = time.time()
             since = item.get("available_since")
-    
-            # first-time mark
+
+            # First time we see available=true: record timestamp and skip
             if since is None:
                 log(f"→ {url} marked available; starting cool-down of {cool_time}s")
                 save_link_state(doc_id, {"available_since": now})
+                # we _just_ started cool-down, so sleep full duration
+                time.sleep(cool_time)
                 continue
-    
+
             elapsed = now - since
             if elapsed < cool_time:
+                remaining = cool_time - elapsed
+                log(
+                    f"→ {url} still in cool-down ({elapsed:.0f}/{cool_time}s); "
+                    f"sleeping {remaining:.0f}s before next check"
+                )
+                time.sleep(remaining)
+                # after sleeping, on next iteration 'available_since' is old
+                # so we'll fall through, reset it, and then loop back around
                 continue
-    
-            # cooldown expired
-            log(f"→ Cool-down expired for {url}; resetting availability")
+
+            # Cool-down expired: reset flag and let the rest of your check run
+            log(
+                f"→ Cool-down expired for {url}; resetting availability and re-checking"
+            )
             save_link_state(
                 doc_id,
                 {"available": False, "available_since": firestore.DELETE_FIELD},
             )
-            continue
+            # update our local copy so downstream logic sees available=False
+            item["available"] = False
             
         # 1) new browser instance
         drv = init_driver()
@@ -645,44 +672,60 @@ def _check_core_offer(drv, wait, item):
 
 
 if __name__ == "__main__":
-    """
-    Continuously poll Firestore for new links, spawning one
-    process per link (existing or newly added) that runs
-    check_single_link() forever.
-    """
     from concurrent.futures import ProcessPoolExecutor
+    import threading
 
-    log("⭐️ AmazonWatcher dynamic concurrent mode starting…")
+    log("⭐️ AmazonWatcher real-time mode starting…")
 
+    # 1) load config once
     cfg = load_config()
     token = cfg.get("token")
     chat_id = cfg.get("chat_id")
     cool = cfg.get("cool_time", 300)
 
-    # Keep track of which doc_ids we already have workers for
-    active_doc_ids = set()
+    # 2) set up executor & tracking
+    executor = ProcessPoolExecutor()
+    active_workers = {}  # doc_id -> Future
 
-    # Use one executor for the lifetime of the script
-    with ProcessPoolExecutor() as executor:
-        while True:
-            # 1) fetch all current links
-            all_links = list(load_links())
-            if not all_links:
-                log("→ No links found in Firestore; will retry shortly")
-            else:
-                current_ids = {doc_id for doc_id, _ in all_links}
-                # 2) for any new doc_id, spawn a worker
-                for doc_id, item in all_links:
-                    if doc_id not in active_doc_ids:
-                        log(f"→ Detected new link {doc_id}; spawning worker")
-                        executor.submit(
-                            check_single_link, doc_id, item, token, chat_id, cool
-                        )
-                        active_doc_ids.add(doc_id)
+    # 3) define inline snapshot callback
+    def on_links_snapshot(col_snapshot, changes, read_time):
+        for change in changes:
+            doc = change.document
+            doc_id = doc.id
+            item = doc.to_dict()
 
-                removed = active_doc_ids - current_ids
-                for doc_id in removed:
-                    log(f"→ Link {doc_id} was deleted; removing from active set")
-                    active_doc_ids.remove(doc_id)
+            if change.type.name == "ADDED":
+                log(f"→ Link added: {doc_id}; spawning worker")
+                future = executor.submit(
+                    check_single_link, doc_id, item, token, chat_id, cool
+                )
+                active_workers[doc_id] = future
 
-            time.sleep(10)
+            elif change.type.name == "MODIFIED":
+                log(f"→ Link modified: {doc_id}; restarting worker")
+                # attempt to cancel old worker (best-effort)
+                old = active_workers.get(doc_id)
+                if old and not old.done():
+                    old.cancel()
+                # start a fresh one
+                future = executor.submit(
+                    check_single_link, doc_id, item, token, chat_id, cool
+                )
+                active_workers[doc_id] = future
+
+            elif change.type.name == "REMOVED":
+                log(f"→ Link removed: {doc_id}; cancelling worker")
+                old = active_workers.pop(doc_id, None)
+                if old and not old.done():
+                    old.cancel()
+
+    # 4) attach the real-time listener to “links”
+    listener = db.collection("links").on_snapshot(on_links_snapshot)
+
+    # 5) block forever (or until Ctrl+C)
+    try:
+        threading.Event().wait()
+    except KeyboardInterrupt:
+        log("Shutting down…")
+        listener.unsubscribe()
+        executor.shutdown(wait=False)
