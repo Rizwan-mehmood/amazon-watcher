@@ -189,7 +189,6 @@ def init_driver():
             },
         )
 
-        log("Initialized undetectable ChromeDriver")
         return _driver
 
     except WebDriverException as e:
@@ -212,31 +211,31 @@ def send_telegram(token: str, chat_id: str, text: str):
 # ─── Set Italy Delivery ────────────────────────────────
 def set_italy_delivery_once(drv, wait):
     try:
-        log("Refreshing Webpage")
+        log("→ Refreshing Webpage")
         drv.refresh()
         time.sleep(5)
         log("→ Setting delivery to Italy (00049)…")
         wait.until(
             EC.element_to_be_clickable((By.ID, "nav-global-location-popover-link"))
         ).click()
-        log("Clicked popup to open")
+        log("→ Clicked popup to open")
         time.sleep(5)
         zip_in = wait.until(
             EC.presence_of_element_located((By.ID, "GLUXZipUpdateInput"))
         )
-        log("Found Field")
+        log("→ Found Field")
         zip_in.clear()
-        log("Field Cleared")
+        log("→ Field Cleared")
         time.sleep(2)
         zip_in.send_keys("00049", Keys.ENTER)
-        log("Entered Adddress")
+        log("→ Entered Adddress")
         time.sleep(4)
         pop = wait.until(
             EC.presence_of_element_located((By.CLASS_NAME, "a-popover-footer"))
         )
-        log("Found Footer")
+        log("→ Found Footer")
         pop.find_element(By.XPATH, "./*").click()
-        log("Clicked Done")
+        log("→ Clicked Done")
         time.sleep(4)
         log("→ Delivery set to Italy 00049")
         return True
@@ -686,6 +685,4 @@ if __name__ == "__main__":
                     log(f"→ Link {doc_id} was deleted; removing from active set")
                     active_doc_ids.remove(doc_id)
 
-            # 3) sleep before polling again
-            log(f"→ Sleeping {60}s before next poll…")
             time.sleep(10)
