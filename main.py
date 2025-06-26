@@ -212,25 +212,31 @@ def send_telegram(token: str, chat_id: str, text: str):
 # ─── Set Italy Delivery ────────────────────────────────
 def set_italy_delivery_once(drv, wait):
     try:
-        log("NEW CODE")
+        log("Refreshing Webpage")
         drv.refresh()
         time.sleep(5)
         log("→ Setting delivery to Italy (00049)…")
         wait.until(
             EC.element_to_be_clickable((By.ID, "nav-global-location-popover-link"))
         ).click()
+        log("Clicked popup to open")
         time.sleep(5)
         zip_in = wait.until(
             EC.presence_of_element_located((By.ID, "GLUXZipUpdateInput"))
         )
+        log("Found Field")
         zip_in.clear()
+        log("Field Cleared")
         time.sleep(2)
         zip_in.send_keys("00049", Keys.ENTER)
+        log("Entered Adddress")
         time.sleep(4)
         pop = wait.until(
             EC.presence_of_element_located((By.CLASS_NAME, "a-popover-footer"))
         )
+        log("Found Footer")
         pop.find_element(By.XPATH, "./*").click()
+        log("Clicked Done")
         time.sleep(4)
         log("→ Delivery set to Italy 00049")
         return True
@@ -282,7 +288,7 @@ def check_single_link(doc_id, item, token, chat_id, cool_time):
 
         drv.get("https://www.amazon.it/-/en/ref=nav_logo")
         time.sleep(5)
-        if not set_italy_delivery_once(drv, wait):
+        if not set_italy_delivery_once(drv, WebDriverWait(drv, 15)):
             try:
                 drv.quit()
             except:
