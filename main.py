@@ -688,7 +688,10 @@ if __name__ == "__main__":
     cool    = cfg.get("cool_time", 300)
 
     # 2) set up executor & tracking, using spawn context
-    executor       = ProcessPoolExecutor(mp_context=mp_ctx)
+    executor       = ProcessPoolExecutor(
+        max_workers=20,
+        mp_context=mp_ctx
+    )
     active_workers = {}  # doc_id -> Future
 
     # 3) inline snapshot callback
