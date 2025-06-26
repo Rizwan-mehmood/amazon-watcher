@@ -235,7 +235,7 @@ def set_italy_delivery_once(drv, wait):
             EC.element_to_be_clickable((By.ID, "nav-global-location-popover-link"))
         ).click()
         log("→ Clicked popup to open")
-        time.sleep(2)
+        time.sleep(8)
         zip_in = wait.until(
             EC.presence_of_element_located((By.ID, "GLUXZipUpdateInput"))
         )
