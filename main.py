@@ -442,6 +442,7 @@ def check_single_link(doc_id, item, token, chat_id, cool_time):
 
                     # 2) Ships from
                     try:
+                        pinned.find_element(By.ID, "aod-pinned-offer-show-more-link").click()
                         # look under the right-hand grid for the “aod-offer-shipsFrom” entry
                         ships = pinned.find_elements(
                             By.CSS_SELECTOR,
