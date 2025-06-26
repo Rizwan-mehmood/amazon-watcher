@@ -239,8 +239,8 @@ def set_italy_delivery_once(drv, wait):
         time.sleep(4)
         log("→ Delivery set to Italy 00049")
         return True
-    except Exception:
-        log("→ Could not set Italy delivery (already set?)")
+    except Exception as e:
+        log(f"→ Could not set Italy delivery (already set?). Problem: {e}")
         return False
 
 
