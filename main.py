@@ -20,6 +20,9 @@ from selenium.webdriver.common.keys import Keys
 from selenium.common.exceptions import TimeoutException, WebDriverException
 from threading import Thread
 from flask import Flask, jsonify
+import multiprocessing as mp
+from concurrent.futures import ProcessPoolExecutor
+import threading
 
 app = Flask(__name__)
 
@@ -672,27 +675,27 @@ def _check_core_offer(drv, wait, item):
 
 
 if __name__ == "__main__":
-    from concurrent.futures import ProcessPoolExecutor
-    import threading
+    # Ensure fresh processes (no inherited gRPC threads)
+    mp_ctx = mp.get_context("spawn")
 
     log("⭐️ AmazonWatcher real-time mode starting…")
 
     # 1) load config once
-    cfg = load_config()
-    token = cfg.get("token")
+    cfg     = load_config()
+    token   = cfg.get("token")
     chat_id = cfg.get("chat_id")
-    cool = cfg.get("cool_time", 300)
+    cool    = cfg.get("cool_time", 300)
 
-    # 2) set up executor & tracking
-    executor = ProcessPoolExecutor()
+    # 2) set up executor & tracking, using spawn context
+    executor       = ProcessPoolExecutor(mp_context=mp_ctx)
     active_workers = {}  # doc_id -> Future
 
-    # 3) define inline snapshot callback
+    # 3) inline snapshot callback
     def on_links_snapshot(col_snapshot, changes, read_time):
         for change in changes:
-            doc = change.document
+            doc    = change.document
             doc_id = doc.id
-            item = doc.to_dict()
+            item   = doc.to_dict()
 
             if change.type.name == "ADDED":
                 log(f"→ Link added: {doc_id}; spawning worker")
@@ -703,11 +706,9 @@ if __name__ == "__main__":
 
             elif change.type.name == "MODIFIED":
                 log(f"→ Link modified: {doc_id}; restarting worker")
-                # attempt to cancel old worker (best-effort)
                 old = active_workers.get(doc_id)
                 if old and not old.done():
                     old.cancel()
-                # start a fresh one
                 future = executor.submit(
                     check_single_link, doc_id, item, token, chat_id, cool
                 )
@@ -719,10 +720,10 @@ if __name__ == "__main__":
                 if old and not old.done():
                     old.cancel()
 
-    # 4) attach the real-time listener to “links”
+    # 4) attach real-time listener
     listener = db.collection("links").on_snapshot(on_links_snapshot)
 
-    # 5) block forever (or until Ctrl+C)
+    # 5) block until Ctrl+C
     try:
         threading.Event().wait()
     except KeyboardInterrupt:
